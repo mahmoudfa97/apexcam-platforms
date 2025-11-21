@@ -49,6 +49,7 @@
     "@react-navigation/bottom-tabs": "latest",
     "@react-navigation/native": "latest",
     "@react-navigation/native-stack": "latest",
+    "@supabase/ssr": "^0.5.2",
     "@supabase/supabase-js": "latest",
     "@tanstack/react-query": "latest",
     "@turf/turf": "latest",
