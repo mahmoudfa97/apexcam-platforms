@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "mdvr-platform.fullname" . }}-tcp-signaling
+  labels:
+    {{- include "mdvr-platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: tcp-signaling
+spec:
+  replicas: {{ .Values.replicaCount.tcpSignaling }}
+  selector:
+    matchLabels:
+      {{- include "mdvr-platform.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: tcp-signaling
+  template:
+    metadata:
+      labels:
+        {{- include "mdvr-platform.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: tcp-signaling
+    spec:
+      serviceAccountName: {{ include "mdvr-platform.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.securityContext | nindent 8 }}
+      containers:
+      - name: tcp-signaling
+        image: "{{ .Values.image.registry }}/tcp-signaling:{{ .Values.image.tag }}"
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        ports:
+        - name: tcp
+          containerPort: 9000
+          protocol: TCP
+        env:
+        - name: NODE_ENV
+          value: production
+        - name: PORT
+          value: "9000"
+        - name: DB_HOST
+          value: {{ include "mdvr-platform.postgresql.fullname" . }}
+        - name: REDIS_HOST
+          value: {{ include "mdvr-platform.redis.fullname" . }}-master
+        livenessProbe:
+          tcpSocket:
+            port: tcp
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          tcpSocket:
+            port: tcp
+          initialDelaySeconds: 10
+          periodSeconds: 5
+        resources:
+          {{- toYaml .Values.resources.tcpSignaling | nindent 12 }}

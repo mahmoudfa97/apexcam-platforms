@@ -1,0 +1,193 @@
+# Global configuration
+global:
+  domain: mdvr.example.com
+  environment: production
+  
+replicaCount:
+  api: 3
+  tcpSignaling: 2
+  tcpMedia: 3
+  websocket: 2
+  mediaWorker: 4
+  billing: 2
+  aiAnalytics: 2
+
+image:
+  registry: ghcr.io/mdvr-platform
+  pullPolicy: IfNotPresent
+  tag: "1.0.0"
+
+# PostgreSQL configuration
+postgresql:
+  enabled: true
+  auth:
+    username: mdvr
+    password: changeme
+    database: mdvr
+  primary:
+    persistence:
+      enabled: true
+      size: 100Gi
+      storageClass: "ssd"
+    resources:
+      requests:
+        memory: "4Gi"
+        cpu: "2"
+      limits:
+        memory: "8Gi"
+        cpu: "4"
+    initdb:
+      scripts:
+        001_schema.sql: |
+          -- Initial schema will be loaded here
+  readReplicas:
+    replicaCount: 2
+    persistence:
+      enabled: true
+      size: 100Gi
+    resources:
+      requests:
+        memory: "4Gi"
+        cpu: "2"
+      limits:
+        memory: "8Gi"
+        cpu: "4"
+
+# Redis configuration
+redis:
+  enabled: true
+  architecture: standalone
+  auth:
+    enabled: true
+    password: changeme
+  master:
+    persistence:
+      enabled: true
+      size: 20Gi
+    resources:
+      requests:
+        memory: "2Gi"
+        cpu: "1"
+      limits:
+        memory: "4Gi"
+        cpu: "2"
+
+# S3/MinIO configuration
+minio:
+  enabled: true
+  mode: distributed
+  replicas: 4
+  persistence:
+    enabled: true
+    size: 1Ti
+  resources:
+    requests:
+      memory: "4Gi"
+      cpu: "2"
+    limits:
+      memory: "8Gi"
+      cpu: "4"
+  buckets:
+    - name: mdvr-media
+      policy: none
+      purge: false
+
+# Monitoring
+prometheus:
+  enabled: true
+  retention: 30d
+  storage:
+    size: 100Gi
+
+grafana:
+  enabled: true
+  adminPassword: changeme
+  persistence:
+    enabled: true
+    size: 10Gi
+
+# Ingress
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+  tls:
+    - secretName: mdvr-tls
+      hosts:
+        - mdvr.example.com
+        - api.mdvr.example.com
+        - ws.mdvr.example.com
+
+# Resources
+resources:
+  api:
+    requests:
+      memory: "512Mi"
+      cpu: "500m"
+    limits:
+      memory: "2Gi"
+      cpu: "2"
+  tcpSignaling:
+    requests:
+      memory: "512Mi"
+      cpu: "500m"
+    limits:
+      memory: "2Gi"
+      cpu: "2"
+  tcpMedia:
+    requests:
+      memory: "1Gi"
+      cpu: "1"
+    limits:
+      memory: "4Gi"
+      cpu: "4"
+  mediaWorker:
+    requests:
+      memory: "2Gi"
+      cpu: "2"
+    limits:
+      memory: "8Gi"
+      cpu: "4"
+  billing:
+    requests:
+      memory: "512Mi"
+      cpu: "500m"
+    limits:
+      memory: "2Gi"
+      cpu: "2"
+  aiAnalytics:
+    requests:
+      memory: "4Gi"
+      cpu: "2"
+    limits:
+      memory: "16Gi"
+      cpu: "8"
+
+# Autoscaling
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 20
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+# Security
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  fsGroup: 1000
+  capabilities:
+    drop:
+      - ALL
+
+# Network Policies
+networkPolicy:
+  enabled: true
+
+# Pod Disruption Budget
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1

@@ -1,0 +1,14 @@
+apiVersion: v2
+name: mdvr-platform
+description: Enterprise MDVR Fleet Management Platform
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+keywords:
+  - mdvr
+  - fleet-management
+  - video-surveillance
+  - iot
+maintainers:
+  - name: MDVR Platform Team
+    email: platform@mdvr.com

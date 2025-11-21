@@ -1,0 +1,111 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: mdvr-platform-alerts
+  namespace: monitoring
+spec:
+  groups:
+  - name: mdvr-platform
+    interval: 30s
+    rules:
+    # High error rate
+    - alert: HighErrorRate
+      expr: |
+        sum(rate(http_requests_total{status=~"5.."}[5m])) by (service)
+        /
+        sum(rate(http_requests_total[5m])) by (service)
+        > 0.05
+      for: 5m
+      labels:
+        severity: critical
+      annotations:
+        summary: "High error rate on {{ $labels.service }}"
+        description: "Error rate is {{ $value | humanizePercentage }} on {{ $labels.service }}"
+    
+    # High response time
+    - alert: HighResponseTime
+      expr: |
+        histogram_quantile(0.95, 
+          sum(rate(http_request_duration_seconds_bucket[5m])) by (le, service)
+        ) > 2
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "High response time on {{ $labels.service }}"
+        description: "95th percentile response time is {{ $value }}s on {{ $labels.service }}"
+    
+    # Device connection loss
+    - alert: HighDeviceDisconnectionRate
+      expr: |
+        sum(rate(device_disconnections_total[5m]))
+        /
+        sum(device_connections_total)
+        > 0.1
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "High device disconnection rate"
+        description: "{{ $value | humanizePercentage }} of devices are disconnecting"
+    
+    # Database connection pool exhaustion
+    - alert: DatabaseConnectionPoolExhausted
+      expr: |
+        pg_pool_connections_active / pg_pool_connections_max > 0.9
+      for: 5m
+      labels:
+        severity: critical
+      annotations:
+        summary: "Database connection pool nearly exhausted"
+        description: "{{ $value | humanizePercentage }} of database connections are in use"
+    
+    # Redis memory usage
+    - alert: HighRedisMemory
+      expr: |
+        redis_memory_used_bytes / redis_memory_max_bytes > 0.9
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Redis memory usage high"
+        description: "Redis is using {{ $value | humanizePercentage }} of available memory"
+    
+    # S3 upload failures
+    - alert: HighS3UploadFailureRate
+      expr: |
+        sum(rate(s3_upload_failures_total[5m]))
+        /
+        sum(rate(s3_upload_total[5m]))
+        > 0.05
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "High S3 upload failure rate"
+        description: "{{ $value | humanizePercentage }} of S3 uploads are failing"
+    
+    # Media transcoding queue backlog
+    - alert: TranscodingQueueBacklog
+      expr: |
+        bullmq_queue_waiting{queue="media-transcoding"} > 1000
+      for: 10m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Large transcoding queue backlog"
+        description: "{{ $value }} videos waiting to be transcoded"
+    
+    # Billing payment failures
+    - alert: HighPaymentFailureRate
+      expr: |
+        sum(rate(payment_failures_total[1h]))
+        /
+        sum(rate(payment_attempts_total[1h]))
+        > 0.1
+      for: 15m
+      labels:
+        severity: critical
+      annotations:
+        summary: "High payment failure rate"
+        description: "{{ $value | humanizePercentage }} of payments are failing"

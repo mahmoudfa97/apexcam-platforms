@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "mdvr-platform.fullname" . }}-tcp-signaling
+  labels:
+    {{- include "mdvr-platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: tcp-signaling
+spec:
+  type: LoadBalancer
+  ports:
+  - port: 9000
+    targetPort: tcp
+    protocol: TCP
+    name: tcp
+  selector:
+    {{- include "mdvr-platform.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: tcp-signaling
+  sessionAffinity: ClientIP
+  sessionAffinityConfig:
+    clientIP:
+      timeoutSeconds: 3600
