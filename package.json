@@ -1,11 +1,13 @@
 {
-  "name": "my-v0-project",
-  "version": "0.1.0",
+  "name": "mdvr-platform",
+  "version": "1.0.0",
   "private": true,
   "scripts": {
     "build": "next build",
     "dev": "next dev",
+    "install:all": "npm install && cd mobile && npm install && cd ../services/api && npm install && cd ../tcp-signaling && npm install && cd ../tcp-media && npm install && cd ../media-worker && npm install && cd ../billing && npm install && cd ../ai-analytics && npm install && cd ../websocket && npm install && cd ../../tools/device-simulator && npm install",
     "lint": "eslint .",
+    "setup": "node scripts/setup.js",
     "start": "next start"
   },
   "dependencies": {
@@ -17,6 +19,7 @@
     "@fastify/rate-limit": "latest",
     "@fastify/swagger": "latest",
     "@fastify/swagger-ui": "latest",
+    "@ffmpeg-installer/ffmpeg": "latest",
     "@hookform/resolvers": "^3.10.0",
     "@neondatabase/serverless": "latest",
     "@radix-ui/react-accordion": "1.2.2",
@@ -54,12 +57,12 @@
     "@tanstack/react-query": "latest",
     "@turf/turf": "latest",
     "@vercel/analytics": "latest",
-    "@vladmandic/face-api": "latest",
-    "autoprefixer": "^10.4.20",
+    "@vladmandic/face-api": "1.7.15",
+    "ai": "latest",
     "axios": "latest",
     "bcryptjs": "latest",
     "bullmq": "latest",
-    "canvas": "latest",
+    "canvas": "3.2.0",
     "child_process": "latest",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -101,7 +104,7 @@
     "tailwind-merge": "^2.5.5",
     "tailwindcss-animate": "^1.0.7",
     "vaul": "^0.9.9",
-    "zod": "3.25.76"
+    "zod": "^3.25.0"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.9",

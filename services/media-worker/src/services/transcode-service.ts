@@ -1,7 +1,10 @@
+import ffmpegInstaller from "@ffmpeg-installer/ffmpeg"
 import ffmpeg from "fluent-ffmpeg"
 import fs from "fs/promises"
 import path from "path"
 import { logger } from "../logger"
+
+ffmpeg.setFfmpegPath(ffmpegInstaller.path)
 
 export class TranscodeService {
   private outputDir: string = process.env.TRANSCODE_OUTPUT_DIR || "/tmp/media/transcoded"

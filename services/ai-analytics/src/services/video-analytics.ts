@@ -1,43 +1,17 @@
-import type { Pool } from "pg"
+import { createClient } from "@supabase/supabase-js"
 import type Redis from "ioredis"
-import * as faceapi from "@vladmandic/face-api"
-import { createCanvas, loadImage } from "canvas"
-import { S3Client } from "@aws-sdk/client-s3"
-import { logger } from "../logger.js"
+import { generateObject } from "ai"
+import logger from "../logger"
 import * as fs from "fs"
 import * as path from "path"
 import { spawn } from "child_process"
 
 export class VideoAnalyticsService {
-  private s3Client: S3Client
+  private supabase
   private modelsLoaded = false
 
-  constructor(
-    private db: Pool,
-    private redis: Redis,
-  ) {
-    this.s3Client = new S3Client({
-      region: process.env.AWS_REGION || "us-east-1",
-      endpoint: process.env.S3_ENDPOINT,
-      credentials: {
-        accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
-        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
-      },
-    })
-
-    this.loadModels()
-  }
-
-  private async loadModels() {
-    try {
-      await faceapi.nets.ssdMobilenetv1.loadFromDisk("./models")
-      await faceapi.nets.faceLandmark68Net.loadFromDisk("./models")
-      await faceapi.nets.faceRecognitionNet.loadFromDisk("./models")
-      this.modelsLoaded = true
-      logger.info("Face detection models loaded")
-    } catch (error) {
-      logger.error("Failed to load face detection models", error)
-    }
+  constructor(private redis: Redis) {
+    this.supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
   }
 
   async analyzeVideo(videoPath: string, deviceId: string) {
@@ -53,20 +27,19 @@ export class VideoAnalyticsService {
         const framePath = frames[i]
         const timestamp = (i / 30) * 1000 // Assuming 30 FPS
 
-        // Detect faces
         const faces = await this.detectFaces(framePath)
 
         if (faces.length > 0) {
           events.push({
             type: "face_detected",
             timestamp,
-            confidence: faces[0].detection.score,
+            confidence: faces[0].confidence,
             count: faces.length,
             framePath,
           })
         }
 
-        // Detect objects (simplified - would use YOLO or similar in production)
+        // Detect objects using AI SDK
         const objects = await this.detectObjects(framePath)
 
         for (const obj of objects) {
@@ -74,7 +47,7 @@ export class VideoAnalyticsService {
             type: "object_detected",
             timestamp,
             objectType: obj.class,
-            confidence: obj.score,
+            confidence: obj.confidence,
             framePath,
           })
         }
@@ -83,16 +56,14 @@ export class VideoAnalyticsService {
         fs.unlinkSync(framePath)
       }
 
-      // Store events in database
       for (const event of events) {
-        await this.db.query(
-          `
-          INSERT INTO analytics_events (
-            device_id, event_type, confidence, metadata, created_at
-          ) VALUES ($1, $2, $3, $4, NOW())
-        `,
-          [deviceId, event.type, event.confidence, JSON.stringify(event)],
-        )
+        await this.supabase.from("analytics_events").insert({
+          device_id: deviceId,
+          event_type: event.type,
+          confidence: event.confidence,
+          metadata: event,
+          created_at: new Date().toISOString(),
+        })
       }
 
       logger.info(`Completed video analysis: ${events.length} events detected`)
@@ -138,23 +109,56 @@ export class VideoAnalyticsService {
   }
 
   async detectFaces(imagePath: string) {
-    if (!this.modelsLoaded) {
-      logger.warn("Face detection models not loaded")
-      return []
-    }
-
     try {
-      const img = await loadImage(imagePath)
-      const canvas = createCanvas(img.width, img.height)
-      const ctx = canvas.getContext("2d")
-      ctx.drawImage(img, 0, 0)
+      // Upload image to Supabase Storage temporarily
+      const imageBuffer = fs.readFileSync(imagePath)
+      const fileName = `temp/${Date.now()}-${path.basename(imagePath)}`
 
-      const detections = await faceapi
-        .detectAllFaces(canvas as any)
-        .withFaceLandmarks()
-        .withFaceDescriptors()
+      const { data: uploadData, error: uploadError } = await this.supabase.storage
+        .from("analytics")
+        .upload(fileName, imageBuffer, {
+          contentType: "image/jpeg",
+          upsert: true,
+        })
 
-      return detections
+      if (uploadError) throw uploadError
+
+      const {
+        data: { publicUrl },
+      } = this.supabase.storage.from("analytics").getPublicUrl(fileName)
+
+      // Use AI SDK for face detection
+      const result = await generateObject({
+        model: "openai/gpt-4-vision-preview",
+        prompt:
+          "Detect all faces in this image and provide their bounding boxes (normalized 0-1 coordinates) and confidence scores",
+        schema: {
+          type: "object",
+          properties: {
+            faces: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  bbox: { type: "array", items: { type: "number" } },
+                  confidence: { type: "number" },
+                },
+              },
+            },
+          },
+        },
+        messages: [
+          {
+            role: "user",
+            content: [{ type: "image", image: publicUrl }],
+          },
+        ],
+      })
+
+      // Clean up temporary file
+      await this.supabase.storage.from("analytics").remove([fileName])
+
+      return result.object.faces
     } catch (error) {
       logger.error("Face detection failed", error)
       return []
@@ -162,9 +166,53 @@ export class VideoAnalyticsService {
   }
 
   private async detectObjects(imagePath: string) {
-    // Simplified object detection - in production, use YOLO or similar
-    // For now, return empty array
-    return []
+    try {
+      const imageBuffer = fs.readFileSync(imagePath)
+      const fileName = `temp/${Date.now()}-${path.basename(imagePath)}`
+
+      const { data: uploadData } = await this.supabase.storage.from("analytics").upload(fileName, imageBuffer, {
+        contentType: "image/jpeg",
+        upsert: true,
+      })
+
+      const {
+        data: { publicUrl },
+      } = this.supabase.storage.from("analytics").getPublicUrl(fileName)
+
+      const result = await generateObject({
+        model: "openai/gpt-4-vision-preview",
+        prompt:
+          "Detect all objects, vehicles, and people in this traffic camera image. Provide class name and confidence for each.",
+        schema: {
+          type: "object",
+          properties: {
+            objects: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  class: { type: "string" },
+                  confidence: { type: "number" },
+                },
+              },
+            },
+          },
+        },
+        messages: [
+          {
+            role: "user",
+            content: [{ type: "image", image: publicUrl }],
+          },
+        ],
+      })
+
+      await this.supabase.storage.from("analytics").remove([fileName])
+
+      return result.object.objects
+    } catch (error) {
+      logger.error("Object detection failed", error)
+      return []
+    }
   }
 
   async getEvents(
@@ -177,28 +225,29 @@ export class VideoAnalyticsService {
       offset: number
     },
   ) {
-    let query = `SELECT * FROM analytics_events WHERE device_id = $1`
-    const params: any[] = [deviceId]
+    let query = this.supabase.from("analytics_events").select("*").eq("device_id", deviceId)
 
     if (options.startDate) {
-      params.push(options.startDate)
-      query += ` AND created_at >= $${params.length}`
+      query = query.gte("created_at", options.startDate.toISOString())
     }
 
     if (options.endDate) {
-      params.push(options.endDate)
-      query += ` AND created_at < $${params.length}`
+      query = query.lt("created_at", options.endDate.toISOString())
     }
 
     if (options.eventType) {
-      params.push(options.eventType)
-      query += ` AND event_type = $${params.length}`
+      query = query.eq("event_type", options.eventType)
     }
 
-    params.push(options.limit, options.offset)
-    query += ` ORDER BY created_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`
+    query = query.order("created_at", { ascending: false }).range(options.offset, options.offset + options.limit - 1)
 
-    const result = await this.db.query(query, params)
-    return result.rows
+    const { data, error } = await query
+
+    if (error) {
+      logger.error({ error }, "Failed to fetch analytics events")
+      return []
+    }
+
+    return data
   }
 }
