@@ -1,26 +1,7 @@
 version: '3.9'
 
 services:
-  # PostgreSQL Database
-  postgres:
-    image: postgres:16-alpine
-    container_name: mdvr-postgres
-    environment:
-      POSTGRES_DB: mdvr_platform
-      POSTGRES_USER: mdvr_user
-      POSTGRES_PASSWORD: mdvr_password_dev
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./db/init:/docker-entrypoint-initdb.d
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U mdvr_user -d mdvr_platform"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  # Redis for pub/sub and caching
+  # Redis for pub/sub and caching (still needed for TCP server coordination)
   redis:
     image: redis:7-alpine
     container_name: mdvr-redis
@@ -35,25 +16,6 @@ services:
       timeout: 3s
       retries: 5
 
-  # MinIO for S3-compatible object storage
-  minio:
-    image: minio/minio:latest
-    container_name: mdvr-minio
-    command: server /data --console-address ":9001"
-    environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin123
-    ports:
-      - "9000:9000"
-      - "9001:9001"
-    volumes:
-      - minio_data:/data
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-      interval: 30s
-      timeout: 20s
-      retries: 3
-
   # REST API Service
   api:
     build:
@@ -62,20 +24,15 @@ services:
     container_name: mdvr-api
     environment:
       NODE_ENV: development
-      DATABASE_URL: postgresql://mdvr_user:mdvr_password_dev@postgres:5432/mdvr_platform
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
       REDIS_URL: redis://redis:6379
-      S3_ENDPOINT: http://minio:9000
-      S3_ACCESS_KEY: minioadmin
-      S3_SECRET_KEY: minioadmin123
-      S3_BUCKET: mdvr-media
-      JWT_SECRET: dev_jwt_secret_change_in_production
-      JWT_REFRESH_SECRET: dev_jwt_refresh_secret_change_in_production
+      JWT_SECRET: ${JWT_SECRET:-dev_jwt_secret_change_in_production}
       PORT: 3000
     ports:
       - "3000:3000"
     depends_on:
-      postgres:
-        condition: service_healthy
       redis:
         condition: service_healthy
     volumes:
@@ -83,7 +40,8 @@ services:
       - /app/node_modules
     command: npm run dev
 
-  # WebSocket Server for real-time updates
+  # WebSocket Server - using Supabase Realtime instead
+  # Kept for custom business logic and TCP server coordination
   websocket:
     build:
       context: ./services/websocket
@@ -91,8 +49,10 @@ services:
     container_name: mdvr-websocket
     environment:
       NODE_ENV: development
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
       REDIS_URL: redis://redis:6379
-      JWT_SECRET: dev_jwt_secret_change_in_production
+      JWT_SECRET: ${JWT_SECRET:-dev_jwt_secret_change_in_production}
       PORT: 4000
     ports:
       - "4000:4000"
@@ -112,14 +72,13 @@ services:
     container_name: mdvr-tcp-signaling
     environment:
       NODE_ENV: development
-      DATABASE_URL: postgresql://mdvr_user:mdvr_password_dev@postgres:5432/mdvr_platform
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
       REDIS_URL: redis://redis:6379
       TCP_PORT: 1087
     ports:
       - "1087:1087"
     depends_on:
-      postgres:
-        condition: service_healthy
       redis:
         condition: service_healthy
     volumes:
@@ -135,21 +94,14 @@ services:
     container_name: mdvr-tcp-media
     environment:
       NODE_ENV: development
-      DATABASE_URL: postgresql://mdvr_user:mdvr_password_dev@postgres:5432/mdvr_platform
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
       REDIS_URL: redis://redis:6379
-      S3_ENDPOINT: http://minio:9000
-      S3_ACCESS_KEY: minioadmin
-      S3_SECRET_KEY: minioadmin123
-      S3_BUCKET: mdvr-media
       TCP_PORT: 6602
     ports:
       - "6602:6602"
     depends_on:
-      postgres:
-        condition: service_healthy
       redis:
-        condition: service_healthy
-      minio:
         condition: service_healthy
     volumes:
       - ./services/tcp-media:/app
@@ -165,18 +117,11 @@ services:
     container_name: mdvr-media-worker
     environment:
       NODE_ENV: development
-      DATABASE_URL: postgresql://mdvr_user:mdvr_password_dev@postgres:5432/mdvr_platform
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
       REDIS_URL: redis://redis:6379
-      S3_ENDPOINT: http://minio:9000
-      S3_ACCESS_KEY: minioadmin
-      S3_SECRET_KEY: minioadmin123
-      S3_BUCKET: mdvr-media
     depends_on:
-      postgres:
-        condition: service_healthy
       redis:
-        condition: service_healthy
-      minio:
         condition: service_healthy
     volumes:
       - ./services/media-worker:/app
@@ -184,23 +129,48 @@ services:
       - media_temp:/tmp/media
     command: npm run dev
 
-  # Admin Web Panel
-  admin-web:
+  # Billing Service
+  billing:
     build:
-      context: ./services/admin-web
+      context: ./services/billing
       dockerfile: Dockerfile
-    container_name: mdvr-admin-web
+    container_name: mdvr-billing
     environment:
-      NEXT_PUBLIC_API_URL: http://localhost:3000
-      NEXT_PUBLIC_WS_URL: ws://localhost:4000
+      NODE_ENV: development
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+      REDIS_URL: redis://redis:6379
+      VERIFONE_API_KEY: ${VERIFONE_API_KEY}
+      VERIFONE_API_SECRET: ${VERIFONE_API_SECRET}
+      VERIFONE_WEBHOOK_SECRET: ${VERIFONE_WEBHOOK_SECRET}
+      PORT: 3003
     ports:
-      - "3001:3000"
+      - "3003:3003"
     depends_on:
-      - api
+      redis:
+        condition: service_healthy
     volumes:
-      - ./services/admin-web:/app
+      - ./services/billing:/app
       - /app/node_modules
-      - /app/.next
+    command: npm run dev
+
+  # AI Analytics Service
+  ai-analytics:
+    build:
+      context: ./services/ai-analytics
+      dockerfile: Dockerfile
+    container_name: mdvr-ai-analytics
+    environment:
+      NODE_ENV: development
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./services/ai-analytics:/app
+      - /app/node_modules
     command: npm run dev
 
   # Prometheus for metrics
@@ -233,9 +203,7 @@ services:
       - prometheus
 
 volumes:
-  postgres_data:
   redis_data:
-  minio_data:
   media_temp:
   prometheus_data:
   grafana_data:
