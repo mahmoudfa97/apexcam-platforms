@@ -55,6 +55,7 @@
     "@vladmandic/face-api": "latest",
     "autoprefixer": "^10.4.20",
     "axios": "latest",
+    "bcryptjs": "latest",
     "bullmq": "latest",
     "canvas": "latest",
     "child_process": "latest",
