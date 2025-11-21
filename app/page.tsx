@@ -1,18 +1,14 @@
-"use client"
-
 import { redirect } from "next/navigation"
-import { useEffect } from "react"
+import { cookies } from "next/headers"
 
-export default function HomePage() {
-  useEffect(() => {
-    // Check if user is authenticated, if so redirect to dashboard
-    const token = localStorage.getItem("mdvr_auth_token")
-    if (token) {
-      redirect("/dashboard")
-    } else {
-      redirect("/login")
-    }
-  }, [])
+export default async function HomePage() {
+  // Check for auth token in cookies
+  const cookieStore = await cookies()
+  const token = cookieStore.get("mdvr_auth_token")
 
-  return null
+  if (token) {
+    redirect("/dashboard")
+  } else {
+    redirect("/login")
+  }
 }
