@@ -15,8 +15,8 @@
   ],
   "scripts": {
     "build": "next build",
-    "dev": "next dev",
-    "install:all": "npm install && cd mobile && npm install && cd ../services/api && npm install && cd ../tcp-signaling && npm install && cd ../tcp-media && npm install && cd ../media-worker && npm install && cd ../billing && npm install && cd ../ai-analytics && npm install && cd ../websocket && npm install && cd ../../tools/device-simulator && npm install",
+    "dev": "next dev --turbopack=false",
+    "install:all": "pnpm install -r",
     "lint": "eslint .",
     "setup": "node scripts/setup.js",
     "start": "next start"
@@ -125,6 +125,7 @@
     "tw-animate-css": "1.3.3",
     "typescript": "^5"
   },
+  "packageManager": "pnpm@9.0.0",
   "trustedDependencies": [
     "pg-native"
   ]

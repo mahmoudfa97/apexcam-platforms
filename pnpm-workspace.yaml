@@ -1,0 +1,10 @@
+packages:
+  - 'services/api'
+  - 'services/tcp-signaling'
+  - 'services/tcp-media'
+  - 'services/media-worker'
+  - 'services/billing'
+  - 'services/ai-analytics'
+  - 'services/websocket'
+  - 'tools/device-simulator'
+  - 'mobile'
